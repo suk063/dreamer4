@@ -4,9 +4,7 @@
 Department of Electrical and Computer Engineering, UC San Diego
 `{suk063, B0nguyen}@ucsd.edu`
 
-> **Course project** extending [Dreamer4](https://github.com/nicklashansen/dreamer4) with a reward-gradient saliency mechanism that makes dynamics training task-aware. Built on PyTorch with 8-GPU DDP training across 30 DeepMind Control Suite and MMBench tasks.
 
----
 
 ## Table of Contents
 
