@@ -503,5 +503,3 @@ reward_head.load_state_dict(ckpt["reward_head"])  # saliency variant only
 ### Acknowledgements
 
 - PyTorch implementation base: [nicklashansen/dreamer4](https://github.com/nicklashansen/dreamer4)
-- Evaluation environment: [DeepMind Control Suite](https://github.com/google-deepmind/dm_control)
-- Perceptual loss: [LPIPS](https://github.com/richzhang/PerceptualSimilarity) (Zhang et al., CVPR 2018)
