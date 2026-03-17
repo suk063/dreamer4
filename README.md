@@ -343,9 +343,7 @@ Runs an `aiohttp` WebSocket server with an HTML/JS frontend for real-time sampli
 | Script | Purpose |
 |---|---|
 | `compare_eval.py` | Side-by-side comparison of multiple checkpoint runs |
-| `analyze_dreamer4_ckpts.py` | Inspect checkpoint contents and parameter counts |
-| `compare_training_logs.py` | Training curve aggregation across runs |
-| `extra_compare_plots.py` | Additional visualization |
+
 
 ---
 
