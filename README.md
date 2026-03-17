@@ -206,7 +206,7 @@ The environment includes PyTorch 2.8, `wandb`, `lpips`, `aiohttp`, and DMControl
 ---
 
 ## 6. Data Preparation
-
+The dataset is available at nicklashansen/dreamer4 on Hugging Face — 7,200 mixed-quality trajectories (3.6M frames) spanning 30 continuous control tasks from DMControl and MMBench.
 ### Input Format
 
 Raw data should be PNG files with **horizontally stacked frames**, shape `(3, 224, N×224)` per file, accompanied by `.npz`/`.json` trajectory files containing actions and rewards.
