@@ -204,7 +204,8 @@ conda activate dreamer4
 The environment includes PyTorch 2.8, `wandb`, `lpips`, `aiohttp`, and DMControl dependencies. See `environment.yaml` for the full spec.
 
 ---
-
+ 
+## 6. Data Preparation
 ### Dataset
  
 The dataset is available at [nicklashansen/dreamer4](https://huggingface.co/datasets/nicklashansen/dreamer4) on Hugging Face — 7,200 mixed-quality trajectories (3.6M frames) spanning 30 continuous control tasks from **DMControl** and **MMBench**.
