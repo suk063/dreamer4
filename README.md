@@ -205,12 +205,14 @@ The environment includes PyTorch 2.8, `wandb`, `lpips`, `aiohttp`, and DMControl
 
 ---
 
-## 6. Data Preparation
-The dataset is available at nicklashansen/dreamer4 on Hugging Face — 7,200 mixed-quality trajectories (3.6M frames) spanning 30 continuous control tasks from DMControl and MMBench.
+### Dataset
+ 
+The dataset is available at [nicklashansen/dreamer4](https://huggingface.co/datasets/nicklashansen/dreamer4) on Hugging Face — 7,200 mixed-quality trajectories (3.6M frames) spanning 30 continuous control tasks from **DMControl** and **MMBench**.
+ 
 ### Input Format
-
+ 
 Raw data should be PNG files with **horizontally stacked frames**, shape `(3, 224, N×224)` per file, accompanied by `.npz`/`.json` trajectory files containing actions and rewards.
-
+ 
 ### Preprocessing
 
 Edit the `FILEDIR` (input) and `OUTDIR` (output) paths inside the script, then run:
@@ -467,8 +469,15 @@ dynamics.load_state_dict(ckpt["dynamics"])
 reward_head.load_state_dict(ckpt["reward_head"])  # saliency variant only
 ```
 
-**Checkpoint locations:**
-
+**Pretrained checkpoint downloads:**
+ 
+| Checkpoint | Source | Notes |
+|---|---|---|
+| Tokenizer | [HuggingFace (nicklashansen/dreamer4)](https://huggingface.co/nicklashansen/dreamer4/blob/main/tokenizer.pt) | Pretrained model from the original Dreamer4 repo; frozen during our experiments |
+| Dynamics (ours) | [Google Drive](https://drive.google.com/file/d/1BDPh3GM7luHc3t3B3Gc_ug1kr7tWKPOj/view?usp=sharing) | Our saliency-weighted dynamics model trained for 95K steps |
+ 
+**Checkpoint locations (produced locally during training):**
+ 
 | Type | Directory | Files |
 |---|---|---|
 | Tokenizer | `logs/tokenizer_ckpts/` | `latest.pt`, `step_XXXXX.pt` |
