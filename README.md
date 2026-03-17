@@ -305,11 +305,9 @@ Same as baseline, plus:
 Checkpoints saved to `logs/dynamics_ckpts/` as `latest.pt` and periodic `step_XXXXX.pt` snapshots.
 
 ---
-
 ## 8. Evaluation
 
 ### Standalone Evaluation
-
 ```bash
 python eval.py --ckpt <path_to_checkpoint>
 ```
@@ -330,7 +328,6 @@ Loads a dynamics checkpoint, runs autoregressive rollouts on held-out sequences,
 `train_dynamics.py` runs an evaluation rollout every N steps and logs per-timestep MSE and PSNR to WandB, along with a "floor baseline" that repeats the last context frame.
 
 ### Interactive UI
-
 ```bash
 python interactive.py
 # Open http://localhost:7860 in a browser
@@ -338,14 +335,27 @@ python interactive.py
 
 Runs an `aiohttp` WebSocket server with an HTML/JS frontend for real-time sampling and inspection of model rollouts.
 
-### Analysis Scripts
+### Comparison Analysis
 
-| Script | Purpose |
+To compare a baseline and saliency checkpoint side-by-side:
+```bash
+python compare_eval.py \
+    --baseline_dir ./eval_output_baseline \
+    --saliency_dir ./eval_output_saliency \
+    --output_dir ./eval_output_comparison
+```
+
+Loads `eval_results.json` from both runs and produces the following outputs in `--output_dir`:
+
+| File | Description |
 |---|---|
-| `compare_eval.py` | Side-by-side comparison of multiple checkpoint runs |
-
-
----
+| `comparison_table.csv` | Per-task metrics (PSNR, SSIM, LPIPS, Latent MSE, Cosine Similarity) with baseline, saliency, and delta columns |
+| `horizon_comparison.pdf` | 6-panel figure of metric curves over rollout steps t=1…16, with a repeat-last-frame floor baseline |
+| `per_task_comparison.pdf` | Grouped bar charts for all 30 tasks across PSNR, SSIM, LPIPS, and Latent MSE |
+| `aggregate_summary.pdf` | Single bar chart of aggregate metrics across all 30 tasks |
+| `qualitative_comparison.png` | Side-by-side qualitative prediction grids (baseline left, saliency right) |
+| `videos/<task>_comparison.gif` | Animated GIFs comparing baseline vs. saliency rollouts per task (up to 8 tasks) |
+| `combined_results.json` | Combined aggregate and per-task metrics from both runs in a single JSON |
 
 ## 9. Results
 
