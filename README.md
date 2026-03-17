@@ -1,189 +1,507 @@
-<h1>Dreamer 4 in PyTorch</span></h1>
+# Reward Gradient Saliency for World Model Training
 
-This is an *unofficial* PyTorch implementation of the Dreamer 4 world model from the paper [*Training Agents Inside of Scalable World Models*](https://arxiv.org/abs/2509.24527) by Danijar Hafner, Wilson Yan, Timothy Lillicrap.
+**Sunghwan Kim · Benjamin Nguyen**
+Department of Electrical and Computer Engineering, UC San Diego
+`{suk063, B0nguyen}@ucsd.edu`
 
-Our implementation is not a complete reproduction of the original work, but we believe that it may serve as a good starting point for anyone looking to extend or experiment with the Dreamer 4 architecture. Notably, the original paper applies Dreamer 4 to Minecraft (discrete actions) whereas this implementation applies it to **multi-task DMControl** (continuous actions). We welcome contributions to improve the codebase and bring it closer to the original paper.
 
-This PyTorch implementation is loosely based on [Edward Hu](https://github.com/edwhu)'s [JAX implementation](https://github.com/edwhu/dreamer4-jax).
 
-----
+## Table of Contents
 
-![Demo](assets/0.gif)
+1. [Project Summary](#1-project-summary)
+2. [Background and Motivation](#2-background-and-motivation)
+3. [Method](#3-method)
+4. [Repository Structure](#4-repository-structure)
+5. [Installation](#5-installation)
+6. [Data Preparation](#6-data-preparation)
+7. [Training](#7-training)
+8. [Evaluation](#8-evaluation)
+9. [Results](#9-results)
+10. [Hyperparameters](#10-hyperparameters)
+11. [Checkpoint Format](#11-checkpoint-format)
+12. [Citation and Acknowledgements](#12-citation-and-acknowledgements)
 
-**Try it out!** We provide model checkpoints and a simple web interface for interaction with the world model.
+---
 
-----
+## 1. Project Summary
 
-## Architecture
+We introduce **reward gradient saliency**, a lightweight modification to Dreamer4's dynamics training that replaces its uniform spatial-token loss with a weighted variant. A small auxiliary reward head (two-layer MLP, ~8K parameters) predicts scalar reward from mean-pooled spatial tokens. The gradient of that prediction with respect to each token identifies which tokens encode task-relevant information. Those gradients are normalized into per-token weights and applied to the dynamics loss — concentrating prediction capacity on task-critical regions without modifying the underlying architecture.
 
-![Dreamer 4 Architecture](assets/1.png)
+Evaluated on 30 DMControl and MMBench tasks, saliency weighting improves latent prediction on **18/30 tasks** with an aggregate −5.6% reduction in Latent MSE. The largest gains occur on tasks with spatially localized rewards: finger-turn-easy (−61.5%), reacher-3-hard (−74.8%), and walker-walk (−27.5%). The method adds fewer than 0.04% additional parameters and ~4% wall-clock overhead.
 
-Dreamer 4 consists of a causal tokenizer and an interactive dynamics model, which both use the same block-causal transformer architecture. The tokenizer encodes partially masked image patches and latent tokens, squeezes the latents through a low-dimensional projection with tanh activation, and decodes the patches. It uses causal attention to achieve temporal compression while allowing frames to be decoded one by one. The dynamics model operates on the interleaved sequence of actions, shortcut noise levels and step sizes, and tokenizer representations. It denoises representations via a shortcut forcing objective.
+---
 
-----
+## 2. Background and Motivation
 
-## Dataset
+Dreamer4 is a two-stage world model:
 
-<img src="assets/tasks/walker-run.gif" width="14.28%"><img src="assets/tasks/finger-spin.gif" width="14.28%"><img src="assets/tasks/hopper-hop.gif" width="14.28%"><img src="assets/tasks/jumper-jump.gif" width="14.28%"><img src="assets/tasks/walker-run-backward.gif" width="14.28%"><img src="assets/tasks/pendulum-swingup.gif" width="14.28%"><img src="assets/tasks/reacher-hard.gif" width="14.28%"></br>
+- **Stage 1 — Causal Tokenizer:** A Block-Causal Transformer encodes visual observations into compact latent tokens via a masked autoencoder (MAE) objective.
+- **Stage 2 — Interactive Dynamics Model:** A second transformer predicts future latent states conditioned on actions, using a flow-matching (shortcut forcing) objective.
 
-Our dataset is available for download on [https://huggingface.co/datasets/nicklashansen/dreamer4](HuggingFace) and contains 7,200 mixed-quality trajectories (3.6M frames) spanning **30 continuous control tasks** from [DMControl](https://arxiv.org/abs/1801.00690) and [MMBench](https://arxiv.org/abs/2511.19584). To construct the dataset, we collect 240 trajectories per task using expert [TD-MPC2](https://www.tdmpc2.com) agents that were released as part of our [Newt/MMBench](https://www.nicklashansen.com/NewtWM) project. We use a default resolution of 128×128 for training but the dataset supports up to 224×224. We provide:
-
-| Directory  |  Description  | Trajs. per task | Total trajs.
-|--------|---------------|------------|-------|
-| [expert](https://huggingface.co/datasets/nicklashansen/dreamer4/tree/main/expert) | Expert demos | 20 | 600 |
-| [mixed-small](https://huggingface.co/datasets/nicklashansen/dreamer4/tree/main/mixed-small) | Mixed quality |  20 | 600 |
-| [mixed-large](https://huggingface.co/datasets/nicklashansen/dreamer4/tree/main/mixed-large) | Mixed quality |  200 | 6000 |
-
-The data generation pipeline used to generate this dataset is similar to that of our [Newt repository](https://github.com/nicklashansen/newt), except in the case of `mixed-small` and `mixed-large` we add diverse noise patterns to actions to increase diversity of behaviors present in the data. Our released model checkpoints were trained on data from **all three directories**. In the following, we will walk you through data preprocessing, training a **single** world model on **all 30 tasks**, as well as how to interact with it via a simple web interface.
-
-----
-
-## Installation
-
-You will need a machine with at least one CUDA-enabled GPU for inference. If you wish to train the tokenizer or dynamics model yourself we recommend using a machine with >256 GB RAM and 8 GPUs (>24 GB of memory each). We recommend installing dependencies in a virtual environment. We provide an `environment.yaml` file for easy installation with [Conda](https://docs.conda.io/en/latest/):
+The dynamics model trains with a **uniform loss** averaged across all spatial tokens:
 
 ```
+L_dyn = (1 / Sz) · Σ_i || ẑ1(i) − z1(i) ||²
+```
+
+This treats every spatial token equally, regardless of its relevance to the task reward. In practice, for a task like `finger-turn-easy`, only 1–2 of the 8 spatial tokens encode the actuated finger-tip and target angle, while the remaining 6–7 encode the static background hinge. Uniform weighting devotes ~75–85% of gradient signal to tokens that barely change between frames, starving the task-critical tokens.
+
+**Our contribution:** replace uniform averaging with a reward-gradient-derived spatial weighting that is computed cheaply, requires no architectural changes, and degrades gracefully to the standard objective when the reward signal provides no spatial contrast.
+
+---
+
+## 3. Method
+
+### 3.1 Causal Tokenizer (Stage 1, unchanged)
+
+Given an observation `x_t ∈ R^(C×H×W)`, the tokenizer divides it into non-overlapping 4×4 patches and encodes them through a Block-Causal Transformer with `Nz = 16` learnable latent tokens:
+
+```
+z_t = tanh(W_b · Enc_φ(x_t^(p))) ∈ R^(Nz × Dz)
+```
+
+The tokenizer is pre-trained with an MAE reconstruction loss (`MSE + 0.2 × LPIPS`) and **frozen** for all dynamics experiments.
+
+### 3.2 Spatial Packing
+
+Before entering the dynamics model, the `Nz` bottleneck tokens are packed by concatenating adjacent groups of `k`:
+
+```
+z_t^(s) ∈ R^(Sz × Ds),   Sz = Nz / k,   Ds = k · Dz
+```
+
+With `k = 2`: 16 tokens of dim 32 → 8 spatial tokens of dim 64.
+
+### 3.3 Dynamics Model — Shortcut Forcing (Stage 2, unchanged)
+
+A noisy input is constructed by interpolating between Gaussian noise `z0` and the clean target `z1` at noise level `σ ∈ [0, 1]`:
+
+```
+z̃_t = (1 − σ) · z0 + σ · z1
+```
+
+The dynamics model learns to recover `z1` from the noisy input, conditioned on actions, task embeddings, and shortcut indices:
+
+```
+ẑ1 = Dyn_θ(a_{1:t}, e_{1:t}, σ_{1:t}, z̃_{1:t})
+```
+
+### 3.4 Auxiliary Reward Head (ours)
+
+A two-layer MLP `f_ψ` maps mean-pooled spatial tokens to a scalar reward estimate:
+
+```
+r̂_t = f_ψ( (1/Sz) · Σ_i z_t^(s,i) )
+```
+
+Hidden dimension: 128, activation: ReLU. Trained jointly with dynamics via MSE:
+
+```
+L_rew = || r̂_t − r_t ||²
+```
+
+### 3.5 Reward Gradient Saliency Mask (ours)
+
+The per-token gradient of the predicted reward is computed with a single backward pass through the reward head (not the frozen encoder):
+
+```
+g_t = ∂r̂_t / ∂z_t^(s)  ∈ R^(Sz × Ds)
+```
+
+Gradient magnitudes are averaged across the token's feature dimension to produce a scalar saliency score per token:
+
+```
+s_t(i) = (1/Ds) · Σ_d |g_t(i, d)|
+```
+
+Scores are min-max normalized into weights in `[δ, 1]`:
+
+```
+w_t(i) = max( δ,  (s_t(i) − min_j s_t(j)) / (max_j s_t(j) − min_j s_t(j) + ε) )
+```
+
+`δ = 0.1` ensures no token is fully ignored. The mask is **detached** before entering the loss (no second-order gradients) and cached every `k_sal = 5` steps to amortize cost.
+
+### 3.6 Warm-up Schedule
+
+Before the reward head converges, its gradients are noisy and could corrupt the dynamics loss. A linear warm-up interpolates from uniform to saliency-weighted over the first `T_warmup` steps:
+
+```
+w_t^final(i) = (1 − α_t) + α_t · w_t(i),   α_t = min(1, t / T_warmup)
+```
+
+### 3.7 Weighted Dynamics Loss
+
+The final training objective:
+
+```
+L_weighted = Σ_i w_t(i) · || ẑ1(i) − z1(i) ||²  /  Σ_i w_t(i)
+
+L(θ, ψ) = L_weighted + λ_rew · L_rew
+```
+
+The denominator normalizes by total weight, so the loss recovers the standard uniform objective when all weights are equal. Gradients flow through the dynamics model `θ` and reward head `ψ`; the tokenizer `φ` remains frozen throughout.
+
+---
+
+## 4. Repository Structure
+
+```
+dreamer4/
+├── dreamer4/                           # Main package (run all scripts from here)
+│   ├── model.py                        # All model classes:
+│   │                                   #   BlockCausalTransformer, Encoder, Decoder,
+│   │                                   #   Tokenizer, Dynamics, RewardHead
+│   ├── train_tokenizer.py              # Stage 1 training (8-GPU DDP, WandB, LPIPS)
+│   ├── train_dynamics.py               # Stage 2 baseline training
+│   ├── train_dynamics_weighting.py     # Stage 2 + saliency reward weighting (ours)
+│   ├── eval.py                         # Standalone evaluation: MSE, PSNR, SSIM, LPIPS
+│   ├── interactive.py                  # aiohttp WebSocket server + browser UI
+│   ├── preprocess_dataset.py           # Raw PNGs → sharded uint8 .pt files
+│   ├── sharded_frame_dataset.py        # Frame dataset (tokenizer training)
+│   ├── wm_dataset.py                   # Trajectory dataset (dynamics training)
+│   ├── task_set.py                     # List of 30 DMControl task names
+│   └── logs/                           # Created at runtime; stores checkpoints
+├── tasks.json                          # Per-task: action_dim, episode steps,
+│                                       #   text instruction, 512-dim language embedding
+├── environment.yaml                    # Conda environment spec
+└── README.md
+```
+
+### Key Model Classes (`model.py`)
+
+| Class | Role |
+|---|---|
+| `BlockCausalTransformer` | Shared backbone; alternates space attention (within timestep) and causal time attention (across timesteps) |
+| `Encoder` | Patchifies frames, runs transformer in `"encoder"` space mode, projects to bottleneck latents |
+| `Decoder` | Reconstructs masked patches from latents in `"decoder"` space mode |
+| `Tokenizer` | Wraps Encoder + Decoder; handles MAE masking and reconstruction loss |
+| `Dynamics` | Transformer in `"wm_agent_isolated"` / `"wm_agent"` space mode; predicts future spatial tokens |
+| `RewardHead` | Two-layer MLP; mean-pools spatial tokens → scalar reward estimate **(our addition)** |
+
+### Token Sequence per Timestep (Dynamics)
+
+```
+ACTION | SHORTCUT_SIGNAL | SHORTCUT_STEP | SPATIAL (8 packed latents) | REGISTER | AGENT
+```
+
+---
+
+## 5. Installation
+
+**Requirements:** CUDA-capable GPU(s), Conda.
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd dreamer4
+
+# Create and activate the conda environment
 conda env create -f environment.yaml
 conda activate dreamer4
 ```
 
-This should install all required packages. Dataset and model checkpoints are (depending on your use case) optional and can be downloaded separately. Our data is made available [here](https://huggingface.co/datasets/nicklashansen/dreamer4) and model checkpoints are available [here](https://huggingface.co/nicklashansen/dreamer4).
+The environment includes PyTorch 2.8, `wandb`, `lpips`, `aiohttp`, and DMControl dependencies. See `environment.yaml` for the full spec.
 
-----
+---
 
-## Data preprocessing
+## 6. Data Preparation
 
-Our provided dataset needs to be preprocessed into a sharded data format to ensure efficient data loading during training. Please be aware that the full preprocessed dataset requires approximately **350 GB of disk storage**. To preprocess the data, run the following command:
+### Input Format
 
-```
-python preprocess_data.py
-```
+Raw data should be PNG files with **horizontally stacked frames**, shape `(3, 224, N×224)` per file, accompanied by `.npz`/`.json` trajectory files containing actions and rewards.
 
-This will preprocess data located in the `FILEDIR` directory (see code comments in `preprocess_data.py` for details) and save the preprocessed shards to the `OUTDIR` directory. You can change these paths by modifying the respective variables in `preprocess_data.py`. To reproduce the results presented in this repo, you will need to preprocess all three data directories provided. Pleases note that the preprocessing step may take several hours depending on your hardware. After preprocessing, you should see a number of shard files in the output directory; repeat this process for all three data directories (`expert`, `mixed-small`, `mixed-large`) to obtain the full dataset for training.
+### Preprocessing
 
-----
+Edit the `FILEDIR` (input) and `OUTDIR` (output) paths inside the script, then run:
 
-## Training the Tokenizer
-
-![Tokenizer training](assets/2.png)
-
-To train the Dreamer 4 tokenizer, first set the ``--data-dirs`` argument in `train_tokenizer.py` to one or more preprocessed data directories, e.g.
-
-```
-p.add_argument("--data_dirs", type=str, nargs="+", default=[   # paths to preprocessed frames
-        "/<path>/expert-shards",
-        "/<path>/mixed-small-shards",
-        "/<path>/mixed-large-shards",
-    ])
+```bash
+cd dreamer4/dreamer4
+python preprocess_dataset.py
 ```
 
-and then run the following command:
+This splits each PNG horizontally into individual frames, resizes to 128×128 (bilinear), and saves sharded `.pt` files:
 
 ```
+{"frames": Tensor(2048, 3, 128, 128)}   # uint8, shard size = 2048 frames
+```
+
+Shards are written atomically (temp file → rename) to avoid corruption on preemption.
+
+### Dataset Classes
+
+**`ShardedFrameDataset`** (tokenizer training)
+- Reads shard `.pt` files with a single-shard LRU cache
+- Samples contiguous sequences of length `seq_len`
+- Returns `float32` in `[0, 1]`
+
+**`WMDataset`** (dynamics training)
+- Inputs: `data_dirs` (trajectory `.npz`/`.json`) + `frames_dirs` (preprocessed shards)
+- Returns per sample:
+
+```python
+{
+    "obs":      Tensor(T+1, 3, H, W),  # video frames (context + horizon)
+    "act":      Tensor(T, A),           # actions
+    "act_mask": Tensor(T, A),           # per-task action validity mask
+    "rew":      Tensor(T,),             # rewards
+    "lang_emb": Tensor(512,),           # 512-dim task text embedding (from tasks.json)
+    "emb_id":   Tensor(),               # task index (int)
+}
+```
+
+Action dimensions are masked to each task's `action_dim` from `tasks.json`. Language embeddings are pre-extracted 512-dim vectors stored in `tasks.json` alongside task metadata.
+
+---
+
+## 7. Training
+
+> **All scripts must be run from `dreamer4/dreamer4/`** (the inner package directory), not the repo root.
+
+### Stage 1 — Tokenizer
+
+```bash
+cd dreamer4/dreamer4
+
+# Full training (8 GPUs, WandB logging, LPIPS loss)
 torchrun --nproc_per_node=8 train_tokenizer.py
-```
-
-This will start the training process using 8 GPUs. The tokenizer checkpoints will be saved in the `./logs/tokenizer_ckpts/` directory by default; please check the script for a full list of configurable arguments.
-
-You can expect training to take approximately 24 hours on 8× RTX 3090 GPUs, after which you should see curves that look something like this:
-
-<img src="assets/tokenizer/psnr.png" width="33.33%"><img src="assets/tokenizer/loss.png" width="33.33%"><img src="assets/tokenizer/z_std.png" width="33.33%"></br>
-
-----
-
-## Training the World Model
-
-![Dynamics training](assets/3.png)
-
-To train the Dreamer 4 dynamics model with action conditioning, first set the `--data-dirs` and `--frame_dirs` arguments in `train_dynamics.py` to one or more unprocessed and preprocessed data directories, respectively, and run the following command:
 
 ```
+
+**What it does:** trains the Encoder + Decoder on random-masked frame reconstruction. Loss = `MSE(masked patches) + 0.2 × LPIPS`. Saves checkpoints to `logs/tokenizer_ckpts/`.
+
+Key hyperparameters: `d_model=256`, `n_heads=4`, `depth=8`, `n_latents=16`, `d_bottleneck=32`, `lr=1e-4`, `batch_size=8`.
+
+---
+
+### Stage 2 — Dynamics (Baseline)
+
+```bash
 torchrun --nproc_per_node=8 train_dynamics.py --use_actions
 ```
 
-This will start the training process using 8 GPUs. Note that this script assumes that you already have a trained tokenizer; if your tokenizer is located at a different path than the default `./logs/tokenizer_ckpts/latest.pt`, you can specify it using the `--tokenizer_ckpt` argument. You can expect training to take approximately 48 hours on 8× RTX 3090 GPUs, after which you should see curves that look something like this:
+Loads the frozen tokenizer checkpoint. Trains the dynamics transformer with uniform shortcut-forcing loss. Two loss components per batch:
+- **Empirical rows (75%):** `σ = k_max` (finest noise level)
+- **Self-supervised rows (25%):** `σ ~ Uniform`
+- **Bootstrap loss (after step 5000):** multi-step velocity prediction
 
-<img src="assets/dynamics/action_shuffle_ratio.png" width="33.33%"><img src="assets/dynamics/loss.png" width="33.33%"><img src="assets/dynamics/psnr.png" width="33.33%"></br>
+---
 
-----
+### Stage 2 — Dynamics with Saliency Weighting (Ours)
 
-## Interactive Web Interface
-
-![Web interface](assets/4.gif)
-
-We provide a simple web interface for interaction with the trained world model. The web server runs locally on your machine and requires a CUDA-enabled GPU with at least 2 GB memory. Before starting the web server, verify that all paths in `interactive.py` point to valid directories and checkpoints. You can download our provided checkpoints from [HuggingFace](https://huggingface.co/nicklashansen/dreamer4/tree/main) or train your own. To start the web server, run the following command:
-
+```bash
+torchrun --nproc_per_node=8 train_dynamics_weighting.py --use_actions --reward_weight <λ>
 ```
+
+Same as baseline, plus:
+- Instantiates and trains `RewardHead` jointly with the dynamics model
+- Computes `∂r̂/∂z^(s)` every `k_sal` steps and caches the saliency mask
+- Applies warm-up schedule for first `T_warmup` steps
+- Saves `reward_head` state dict alongside dynamics in checkpoints
+
+Checkpoints saved to `logs/dynamics_ckpts/` as `latest.pt` and periodic `step_XXXXX.pt` snapshots.
+
+---
+
+## 8. Evaluation
+
+### Standalone Evaluation
+
+```bash
+python eval.py --ckpt <path_to_checkpoint>
+```
+
+Loads a dynamics checkpoint, runs autoregressive rollouts on held-out sequences, and reports:
+
+| Metric | Description |
+|---|---|
+| **Latent MSE** | Primary metric — prediction error in the latent space where planning operates |
+| PSNR | Pixel-space fidelity after decoding |
+| SSIM | Structural similarity after decoding |
+| LPIPS | Perceptual similarity after decoding |
+
+**Rollout protocol:** condition on 8 ground-truth context frames; autoregressively predict 16 future frames using the shortcut schedule (`d = 0.25`, `K = 4`). Evaluate on 16 held-out sequences per task.
+
+### In-Training Evaluation
+
+`train_dynamics.py` runs an evaluation rollout every N steps and logs per-timestep MSE and PSNR to WandB, along with a "floor baseline" that repeats the last context frame.
+
+### Interactive UI
+
+```bash
 python interactive.py
+# Open http://localhost:7860 in a browser
 ```
 
-and navigate to `http://localhost:7860` in your web browser (assuming you are running it locally and use the default port `7860`). If you are running the web server on a remote (headless) machine, you should still be able to view it locally in your browser after forwarding via SSH, e.g.
+Runs an `aiohttp` WebSocket server with an HTML/JS frontend for real-time sampling and inspection of model rollouts.
 
-```
-ssh -L 7860:127.0.0.1:7860 user@remote-machine
-```
+### Analysis Scripts
 
-assuming the web server is running on `remote-machine` and you want to forward it to your local port `7860`. You can customize the port using the `--port` argument.
+| Script | Purpose |
+|---|---|
+| `compare_eval.py` | Side-by-side comparison of multiple checkpoint runs |
+| `analyze_dreamer4_ckpts.py` | Inspect checkpoint contents and parameter counts |
+| `compare_training_logs.py` | Training curve aggregation across runs |
+| `extra_compare_plots.py` | Additional visualization |
 
-----
+---
 
-## Checkpoints
+## 9. Results
 
-Pre-trained tokenizer and dynamics model checkpoints can be downloaded from [HuggingFace](https://huggingface.co/nicklashansen/dreamer4/tree/main). We provide:
+Latent MSE at 95K steps (lower is better). ∆MSE is relative change; **bold** = saliency improves over baseline.
 
-| Model  |  Description  | Resolution | Tasks |
-|--------|---------------|------------|-------|
-| [Tokenizer](https://huggingface.co/nicklashansen/dreamer4/resolve/main/tokenizer_ckpt.pt) | Trained for 90k steps | 128×128 | 30 tasks |
-| [Dynamics Model](https://huggingface.co/nicklashansen/dreamer4/resolve/main/dynamics_ckpt.pt) | Trained for 40k steps with actions |  128×128 | 30 tasks |
+### Per-Task Results
 
-----
+| Task | Baseline MSE | Ours MSE | ∆MSE | PSNR (Base→Ours) |
+|---|---|---|---|---|
+| **Locomotion** | | | | |
+| walker-walk | .0532 | .0385 | **−27.5%** | 21.28 → 21.77 |
+| walker-walk-bw | .0441 | .0336 | **−23.8%** | 21.08 → 21.46 |
+| walker-run-bw | .0305 | .0226 | **−25.7%** | 21.42 → 22.00 |
+| walker-run | .0135 | .0130 | **−3.5%** | 24.31 → 24.67 |
+| jumper-jump | .0176 | .0115 | **−34.4%** | 28.07 → 29.39 |
+| cheetah-run-back | .0110 | .0075 | **−31.6%** | 26.06 → 26.18 |
+| cheetah-run-bw | .0062 | .0050 | **−19.3%** | 28.38 → 28.19 |
+| hopper-hop | .0128 | .0344 | +168.9% | 26.77 → 25.95 |
+| hopper-stand | .0059 | .0117 | +96.7% | 32.50 → 31.75 |
+| **Manipulation** | | | | |
+| finger-turn-easy | .0136 | .0052 | **−61.5%** | 26.16 → 27.01 |
+| finger-spin | .0213 | .0128 | **−39.9%** | 25.82 → 26.95 |
+| finger-turn-hard | .0118 | .0088 | **−25.5%** | 27.37 → 27.30 |
+| cup-spin | .0226 | .0201 | **−11.0%** | 29.28 → 29.30 |
+| **Reaching** | | | | |
+| reacher-3-hard | .0058 | .0015 | **−74.8%** | 29.10 → 31.19 |
+| reacher-hard | .0017 | .0013 | **−21.9%** | 32.24 → 33.10 |
+| **Classic Control** | | | | |
+| cartpole-sw-sparse | .0056 | .0034 | **−39.8%** | 34.84 → 35.88 |
+| pendulum-swingup | .0115 | .0073 | **−36.7%** | 32.84 → 32.81 |
+| pendulum-spin | .0432 | .0371 | **−14.0%** | 27.63 → 27.79 |
+| cartpole-balance | .0012 | .0018 | +49.1% | 36.71 → 35.45 |
+| **Aggregate (30 tasks)** | **.0167** | **.0158** | **−5.6%** | 28.33 → 28.42 |
 
-## Citation
+### Category Summary
 
-If you use this codebase in your research, please consider citing us as:
+| Category | Tasks improved | Mean ∆MSE |
+|---|---|---|
+| Manipulation | 4 / 5 | −24.5% |
+| Reaching | 2 / 4 | −19.4% |
+| Classic Control | 4 / 7 | −7.2% |
+| Locomotion (excl. hopper) | 7 / 11 | −12.8% |
 
-```
-@misc{Hansen2026Dreamer4PyTorch,
-    title={Dreamer 4 in PyTorch},
-    author={Nicklas Hansen},
-    year={2026},
-    publisher={GitHub},
-    journal={GitHub repository},
-    howpublished={\url{https://github.com/nicklashansen/dreamer4}},
+### Horizon Analysis
+
+Saliency weighting provides a compounding advantage over autoregressive rollout length:
+
+| Horizon step | Baseline MSE | Ours MSE | ∆ |
+|---|---|---|---|
+| t = 1 | 0.0067 | 0.0065 | −3.0% |
+| t = 16 | 0.0228 | 0.0211 | **−7.5%** |
+
+---
+
+## 10. Hyperparameters
+
+### Tokenizer (Stage 1)
+
+| Parameter | Value |
+|---|---|
+| Input resolution | 128 × 128 |
+| Patch size | 4 × 4 (→ 16 patches) |
+| `d_model` | 256 |
+| Depth / heads | 8 / 4 |
+| Latent tokens `Nz` | 16 |
+| Bottleneck dim `Dz` | 32 |
+| Learning rate | 1e-4 |
+| Batch size | 8 |
+| LPIPS weight | 0.2 |
+
+### Dynamics (Stage 2)
+
+| Parameter | Value |
+|---|---|
+| `d_model` | 512 |
+| Depth / heads | 8 / 4 |
+| Spatial tokens `Sz` | 8 |
+| Packing factor `k` | 2 |
+| Batch size | 24 |
+| Learning rate | 1e-4 (AdamW) |
+| Gradient clipping | 1.0 |
+| Training steps | 95,000 |
+| Bootstrap loss start | step 5,000 |
+
+### Saliency Variant (additional)
+
+| Parameter | Value |
+|---|---|
+| Reward loss weight `λ_rew` | 0.01 |
+| Warm-up steps `T_warmup` | 5,000 |
+| Min saliency weight `δ` | 0.1 |
+| Saliency recompute interval `k_sal` | 5 steps |
+| Reward head hidden dim | 128 |
+
+---
+
+## 11. Checkpoint Format
+
+Checkpoints are Python dicts saved with `torch.save`:
+
+```python
+{
+    "step":        int,           # Global training step
+    "epoch":       int,
+    "model":       state_dict,    # Tokenizer weights  (key: "model")
+    "dynamics":    state_dict,    # Dynamics weights   (key: "dynamics")
+    "reward_head": state_dict,    # Reward head — saliency variant only
+    "opt":         state_dict,    # AdamW optimizer state
+    "scaler":      state_dict,    # AMP GradScaler state
+    "args":        dict,          # Original argparse namespace
 }
 ```
 
-as well as the original Dreamer 4 paper:
+**Loading:**
 
+```python
+ckpt = torch.load("latest.pt", map_location="cpu")
+tokenizer.load_state_dict(ckpt["model"])
+dynamics.load_state_dict(ckpt["dynamics"])
+reward_head.load_state_dict(ckpt["reward_head"])  # saliency variant only
 ```
-@misc{Hafner2025TrainingAgents,
-    title={Training Agents Inside of Scalable World Models}, 
-    author={Danijar Hafner and Wilson Yan and Timothy Lillicrap},
-    year={2025},
-    eprint={2509.24527},
-    archivePrefix={arXiv},
-    primaryClass={cs.AI},
-    url={https://arxiv.org/abs/2509.24527}, 
+
+**Checkpoint locations:**
+
+| Type | Directory | Files |
+|---|---|---|
+| Tokenizer | `logs/tokenizer_ckpts/` | `latest.pt`, `step_XXXXX.pt` |
+| Dynamics | `logs/dynamics_ckpts/` | `latest.pt`, `step_XXXXX.pt` |
+
+---
+
+## 12. Citation and Acknowledgements
+
+### This Work
+
+```bibtex
+@article{kim2025saliency,
+  title   = {Reward Gradient Saliency for World Model Training},
+  author  = {Kim, Sunghwan and Nguyen, Benjamin},
+  year    = {2025},
+  note    = {Department of ECE, UC San Diego}
 }
 ```
 
-----
+### Dreamer4 (base implementation)
 
-## Contributing
+```bibtex
+@article{hafner2025dreamer4,
+  title   = {Training Agents Inside of Scalable World Models},
+  author  = {Hafner, Danijar and Yan, Wilson and Lillicrap, Timothy},
+  journal = {arXiv preprint arXiv:2509.24527},
+  year    = {2025}
+}
+```
 
-You are very welcome to contribute to this project! We especially welcome contributions to improve the codebase and bring it closer to the original paper. Feel free to open an issue or pull request if you have any suggestions or bug reports, but please review our [guidelines](CONTRIBUTING.md) first.
+### Acknowledgements
 
-----
-
-## License
-
-This project is licensed under the MIT License - see the `LICENSE` file for details. Note that the repository relies on third-party code, which is subject to their respective licenses.
-
-----
-
-## References
-
-- [Training Agents Inside of Scalable World Models](https://arxiv.org/abs/2509.24527) - Danijar Hafner, Wilson Yan, Timothy Lillicrap
-- [Learning Massively Multitask World Models for Continuous Control](https://arxiv.org/abs/2511.19584) - Nicklas Hansen, Hao Su, Xiaolong Wang
-- [TD-MPC2: Scalable, Robust World Models for Continuous Control](https://arxiv.org/abs/2310.16828) - Nicklas Hansen, Hao Su, Xiaolong Wang
-- [Dreamer4 JAX Implementation](https://github.com/edwhu/dreamer4-jax) - Edward Hu
+- PyTorch implementation base: [nicklashansen/dreamer4](https://github.com/nicklashansen/dreamer4)
+- Evaluation environment: [DeepMind Control Suite](https://github.com/google-deepmind/dm_control)
+- Perceptual loss: [LPIPS](https://github.com/richzhang/PerceptualSimilarity) (Zhang et al., CVPR 2018)
