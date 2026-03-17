@@ -474,7 +474,7 @@ reward_head.load_state_dict(ckpt["reward_head"])  # saliency variant only
 | Checkpoint | Source | Notes |
 |---|---|---|
 | Tokenizer | [HuggingFace (nicklashansen/dreamer4)](https://huggingface.co/nicklashansen/dreamer4/blob/main/tokenizer.pt) | Pretrained model from the original Dreamer4 repo; frozen during our experiments |
-| Dynamics (ours) | [Google Drive](https://drive.google.com/file/d/1BDPh3GM7luHc3t3B3Gc_ug1kr7tWKPOj/view?usp=sharing) | Our saliency-weighted dynamics model trained for 95K steps |
+| Dynamics (baseline and ours) | [Google Drive](https://drive.google.com/file/d/1BDPh3GM7luHc3t3B3Gc_ug1kr7tWKPOj/view?usp=sharing) | Baseline and our saliency-weighted dynamics models are trained for 95K steps |
  
 **Checkpoint locations (produced locally during training):**
  
