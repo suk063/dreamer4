@@ -4,7 +4,7 @@
 Department of Electrical and Computer Engineering, UC San Diego
 `{suk063, B0nguyen}@ucsd.edu`
 
-> **Course project** extending [Dreamer4](https://github.com/nicklashansen/dreamer4) with a reward-gradient saliency mechanism that makes dynamics training task-aware. Built on PyTorch with 8-GPU DDP training across 30 DeepMind Control Suite tasks.
+> **Course project** extending [Dreamer4](https://github.com/nicklashansen/dreamer4) with a reward-gradient saliency mechanism that makes dynamics training task-aware. Built on PyTorch with 8-GPU DDP training across 30 DeepMind Control Suite and MMBench tasks.
 
 ---
 
@@ -29,7 +29,7 @@ Department of Electrical and Computer Engineering, UC San Diego
 
 We introduce **reward gradient saliency**, a lightweight modification to Dreamer4's dynamics training that replaces its uniform spatial-token loss with a weighted variant. A small auxiliary reward head (two-layer MLP, ~8K parameters) predicts scalar reward from mean-pooled spatial tokens. The gradient of that prediction with respect to each token identifies which tokens encode task-relevant information. Those gradients are normalized into per-token weights and applied to the dynamics loss — concentrating prediction capacity on task-critical regions without modifying the underlying architecture.
 
-Evaluated on 30 DMControl tasks, saliency weighting improves latent prediction on **18/30 tasks** with an aggregate −5.6% reduction in Latent MSE. The largest gains occur on tasks with spatially localized rewards: finger-turn-easy (−61.5%), reacher-3-hard (−74.8%), and walker-walk (−27.5%). The method adds fewer than 0.04% additional parameters and ~4% wall-clock overhead.
+Evaluated on 30 DMControl and MMBench tasks, saliency weighting improves latent prediction on **18/30 tasks** with an aggregate −5.6% reduction in Latent MSE. The largest gains occur on tasks with spatially localized rewards: finger-turn-easy (−61.5%), reacher-3-hard (−74.8%), and walker-walk (−27.5%). The method adds fewer than 0.04% additional parameters and ~4% wall-clock overhead.
 
 ---
 
@@ -155,7 +155,6 @@ dreamer4/
 │   │                                   #   BlockCausalTransformer, Encoder, Decoder,
 │   │                                   #   Tokenizer, Dynamics, RewardHead
 │   ├── train_tokenizer.py              # Stage 1 training (8-GPU DDP, WandB, LPIPS)
-│   ├── train_tokenizer_ben.py          # Stage 1 variant (no WandB/LPIPS, local dev)
 │   ├── train_dynamics.py               # Stage 2 baseline training
 │   ├── train_dynamics_weighting.py     # Stage 2 + saliency reward weighting (ours)
 │   ├── eval.py                         # Standalone evaluation: MSE, PSNR, SSIM, LPIPS
@@ -269,8 +268,6 @@ cd dreamer4/dreamer4
 # Full training (8 GPUs, WandB logging, LPIPS loss)
 torchrun --nproc_per_node=8 train_tokenizer.py
 
-# Local development variant (no WandB, no LPIPS)
-torchrun --nproc_per_node=8 train_tokenizer_ben.py
 ```
 
 **What it does:** trains the Encoder + Decoder on random-masked frame reconstruction. Loss = `MSE(masked patches) + 0.2 × LPIPS`. Saves checkpoints to `logs/tokenizer_ckpts/`.
