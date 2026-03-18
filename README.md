@@ -1,9 +1,8 @@
 # Reward Gradient Saliency for World Model Training
 
-**Sunghwan Kim · Benjamin Nguyen**
+**Sunghwan Kim · Benjamin Nguyen** `{suk063, B0nguyen}@ucsd.edu`
 
 Department of Electrical and Computer Engineering, UC San Diego
-`{suk063, B0nguyen}@ucsd.edu`
 
 
 
