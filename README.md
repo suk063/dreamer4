@@ -18,7 +18,7 @@ Department of Electrical and Computer Engineering, UC San Diego
 8. [Evaluation](#8-evaluation)
 9. [Results](#9-results)
 10. [Hyperparameters](#10-hyperparameters)
-11. [Checkpoint Format](#11-checkpoint-format)
+11. [Checkpoint](#11-checkpoint)
 12. [Citation and Acknowledgements](#12-citation-and-acknowledgements)
 
 ---
@@ -483,7 +483,7 @@ Cosine similarity follows a similar trend, with the saliency model maintaining 0
 
 ---
 
-## 11. Checkpoint Format
+## 11. Checkpoint
 
 Checkpoints are Python dicts saved with `torch.save`:
 
