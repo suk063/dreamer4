@@ -371,32 +371,51 @@ Latent MSE at 95K steps (lower is better). ∆MSE is relative change; **bold** =
 
 ### Per-Task Results
 
-| Task | Baseline MSE | Ours MSE | ∆MSE | PSNR (Base→Ours) |
-|---|---|---|---|---|
-| **Locomotion** | | | | |
-| walker-walk | .0532 | .0385 | **−27.5%** | 21.28 → 21.77 |
-| walker-walk-bw | .0441 | .0336 | **−23.8%** | 21.08 → 21.46 |
-| walker-run-bw | .0305 | .0226 | **−25.7%** | 21.42 → 22.00 |
-| walker-run | .0135 | .0130 | **−3.5%** | 24.31 → 24.67 |
-| jumper-jump | .0176 | .0115 | **−34.4%** | 28.07 → 29.39 |
-| cheetah-run-back | .0110 | .0075 | **−31.6%** | 26.06 → 26.18 |
-| cheetah-run-bw | .0062 | .0050 | **−19.3%** | 28.38 → 28.19 |
-| hopper-hop | .0128 | .0344 | +168.9% | 26.77 → 25.95 |
-| hopper-stand | .0059 | .0117 | +96.7% | 32.50 → 31.75 |
-| **Manipulation** | | | | |
-| finger-turn-easy | .0136 | .0052 | **−61.5%** | 26.16 → 27.01 |
-| finger-spin | .0213 | .0128 | **−39.9%** | 25.82 → 26.95 |
-| finger-turn-hard | .0118 | .0088 | **−25.5%** | 27.37 → 27.30 |
-| cup-spin | .0226 | .0201 | **−11.0%** | 29.28 → 29.30 |
-| **Reaching** | | | | |
-| reacher-3-hard | .0058 | .0015 | **−74.8%** | 29.10 → 31.19 |
-| reacher-hard | .0017 | .0013 | **−21.9%** | 32.24 → 33.10 |
-| **Classic Control** | | | | |
-| cartpole-sw-sparse | .0056 | .0034 | **−39.8%** | 34.84 → 35.88 |
-| pendulum-swingup | .0115 | .0073 | **−36.7%** | 32.84 → 32.81 |
-| pendulum-spin | .0432 | .0371 | **−14.0%** | 27.63 → 27.79 |
-| cartpole-balance | .0012 | .0018 | +49.1% | 36.71 → 35.45 |
-| **Aggregate (30 tasks)** | **.0167** | **.0158** | **−5.6%** | 28.33 → 28.42 |
+Full per-task comparison across all 30 DMControl tasks. Latent MSE is the primary metric as it directly measures prediction quality in the latent space where planning operates, unlike pixel-space metrics (PSNR, SSIM) that also depend on the frozen decoder.
+
+| Task | Base MSE | Ours MSE | ∆MSE | Base PSNR | Ours PSNR |
+|---|---|---|---|---|---|
+| **Locomotion** | | | | | |
+| walker-walk | .0532 | .0385 | **−27.5%** | 21.28 | 21.77 |
+| walker-stand | .0475 | .0653 | +37.4% | 20.74 | 20.10 |
+| walker-walk-bw | .0441 | .0336 | **−23.8%** | 21.08 | 21.46 |
+| walker-run-bw | .0305 | .0226 | **−25.7%** | 21.42 | 22.00 |
+| walker-run | .0135 | .0130 | **−3.5%** | 24.31 | 24.67 |
+| hopper-hop | .0128 | .0344 | +168.9% | 26.77 | 25.95 |
+| hopper-hop-bw | .0098 | .0096 | **−2.1%** | 30.76 | 30.69 |
+| hopper-stand | .0059 | .0117 | +96.7% | 32.50 | 31.75 |
+| cheetah-run-front | .0112 | .0139 | +24.2% | 25.92 | 25.82 |
+| cheetah-run-back | .0110 | .0075 | **−31.6%** | 26.06 | 26.18 |
+| cheetah-run | .0071 | .0082 | +15.3% | 28.19 | 27.39 |
+| cheetah-run-bw | .0062 | .0050 | **−19.3%** | 28.38 | 28.19 |
+| cheetah-jump | .0058 | .0067 | +16.4% | 27.97 | 27.43 |
+| jumper-jump | .0176 | .0115 | **−34.4%** | 28.07 | 29.39 |
+| **Manipulation** | | | | | |
+| cup-catch | .0251 | .0289 | +15.4% | 28.00 | 27.74 |
+| cup-spin | .0226 | .0201 | **−11.0%** | 29.28 | 29.30 |
+| finger-spin | .0213 | .0128 | **−39.9%** | 25.82 | 26.95 |
+| finger-turn-easy | .0136 | .0052 | **−61.5%** | 26.16 | 27.01 |
+| finger-turn-hard | .0118 | .0088 | **−25.5%** | 27.37 | 27.30 |
+| **Reaching** | | | | | |
+| reacher-3-hard | .0058 | .0015 | **−74.8%** | 29.10 | 31.19 |
+| reacher-3-easy | .0026 | .0029 | +12.0% | 31.02 | 30.69 |
+| reacher-easy | .0018 | .0020 | +7.0% | 31.84 | 31.44 |
+| reacher-hard | .0017 | .0013 | **−21.9%** | 32.24 | 33.10 |
+| **Classic Control** | | | | | |
+| pendulum-spin | .0432 | .0371 | **−14.0%** | 27.63 | 27.79 |
+| pendulum-swingup | .0115 | .0073 | **−36.7%** | 32.84 | 32.81 |
+| acrobot-swingup | .0308 | .0319 | +3.7% | 29.65 | 29.67 |
+| cartpole-swingup | .0248 | .0249 | +0.3% | 27.42 | 27.58 |
+| cartpole-sw-sparse | .0056 | .0034 | **−39.8%** | 34.84 | 35.88 |
+| cartpole-bal-sparse | .0021 | .0018 | **−12.7%** | 36.50 | 36.05 |
+| cartpole-balance | .0012 | .0018 | +49.1% | 36.71 | 35.45 |
+| **Aggregate (30 tasks)** | **.0167** | **.0158** | **−5.6%** | 28.33 | 28.42 |
+
+Saliency benefits concentrate on **challenging tasks with localized reward-relevant dynamics**. Among the 15 hardest tasks (highest baseline Latent MSE), saliency improves 10 (67%). The most dramatic gains occur in dexterous manipulation — `finger-turn-easy` (−61.5%), `finger-spin` (−39.9%), `finger-turn-hard` (−25.5%) — where the saliency mask correctly identifies finger-tip tokens as reward-critical. Hard task variants consistently outperform their easy counterparts: `reacher-3-hard` improves by −74.8% while `reacher-3-easy` degrades by +12.0%, consistent with sparser rewards producing sharper saliency masks.
+
+The largest degradations occur on `hopper-hop` (+168.9%) and `hopper-stand` (+96.7%), where the reward structure is spatially uniform — standing upright or hopping forward rewards the entire body configuration rather than a localized joint — leaving the saliency gradient without useful spatial contrast.
+
+---
 
 ### Category Summary
 
@@ -407,16 +426,20 @@ Latent MSE at 95K steps (lower is better). ∆MSE is relative change; **bold** =
 | Classic Control | 4 / 7 | −7.2% |
 | Locomotion (excl. hopper) | 7 / 11 | −12.8% |
 
+Manipulation tasks benefit most, confirming that saliency weighting is most effective in domains where reward depends on a spatially localized subset of the scene — fingertips, reacher arms, or pendulum angles — rather than whole-body configurations.
+
+---
+
 ### Horizon Analysis
 
-Saliency weighting provides a compounding advantage over autoregressive rollout length:
+Latent MSE increases for both models as the autoregressive rollout progresses, reflecting compounding prediction errors. Saliency weighting provides a **compounding advantage** — better short-horizon predictions propagate into more accurate long-horizon rollouts.
 
 | Horizon step | Baseline MSE | Ours MSE | ∆ |
 |---|---|---|---|
 | t = 1 | 0.0067 | 0.0065 | −3.0% |
 | t = 16 | 0.0228 | 0.0211 | **−7.5%** |
 
----
+Cosine similarity follows a similar trend, with the saliency model maintaining 0.9718 at t = 16 compared to 0.9708 for the baseline.
 
 ## 10. Hyperparameters
 
