@@ -368,8 +368,6 @@ Loads `eval_results.json` from both runs and produces the following outputs in `
 
 ## 9. Results
 
-Latent MSE at 95K steps (lower is better). ∆MSE is relative change; **bold** = saliency improves over baseline.
-
 ### Per-Task Results
 
 Full per-task comparison across all 30 DMControl tasks. Latent MSE is the primary metric as it directly measures prediction quality in the latent space where planning operates, unlike pixel-space metrics (PSNR, SSIM) that also depend on the frozen decoder.
