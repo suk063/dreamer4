@@ -357,6 +357,14 @@ Loads `eval_results.json` from both runs and produces the following outputs in `
 | `videos/<task>_comparison.gif` | Animated GIFs comparing baseline vs. saliency rollouts per task (up to 8 tasks) |
 | `combined_results.json` | Combined aggregate and per-task metrics from both runs in a single JSON |
 
+### Qualitative Example
+
+**`hopper-hop`**
+
+![hopper-hop baseline vs saliency](dreamer4/eval_output_comparison/videos/hopper-hop_comparison.gif)
+
+> Left: Baseline. Right: Saliency. Blue border = context frames, red border = predicted horizon frames.
+
 ## 9. Results
 
 Latent MSE at 95K steps (lower is better). ∆MSE is relative change; **bold** = saliency improves over baseline.
